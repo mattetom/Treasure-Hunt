@@ -1,8 +1,10 @@
 package com.example.treasurehunt
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.annotation.TargetApi
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.IntentSender
@@ -11,6 +13,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +24,9 @@ import androidx.lifecycle.SavedStateViewModelFactory
 import androidx.lifecycle.ViewModelProvider
 import com.example.treasurehunt.databinding.ActivityMainBinding
 import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
+import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
@@ -38,6 +43,11 @@ class MainActivity : AppCompatActivity() {
         android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
 
     // A PendingIntent for the Broadcast Receiver that handles geofence transitions.
+    private val geofencePendingIntent: PendingIntent by lazy {
+        val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
+        intent.action = ACTION_GEOFENCE_EVENT
+        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         )[GeofenceViewModel::class.java]
         binding.viewmodel = viewModel
         binding.lifecycleOwner = this
-
+        geofencingClient = LocationServices.getGeofencingClient(this)
         // Create channel for notifications
 //        createChannel(this)
     }
@@ -191,7 +201,56 @@ class MainActivity : AppCompatActivity() {
      * no more geofences, we remove the geofence and let the viewModel know that the ending hint
      * is now "active."
      */
+    @SuppressLint("MissingPermission")
     private fun addGeofenceForClue() {
+        if (viewModel.geofenceIsActive()) return
+        val currentGeofenceIndex = viewModel.nextGeofenceIndex()
+        if (currentGeofenceIndex >= GeofencingConstants.NUM_LANDMARKS) {
+            removeGeofences()
+            viewModel.geofenceActivated()
+            return
+        }
+        val currentGeofenceData = GeofencingConstants.LANDMARK_DATA[currentGeofenceIndex]
+
+        val geofence = Geofence.Builder()
+            .setRequestId(currentGeofenceData.id)
+            .setCircularRegion(
+                currentGeofenceData.latLong.latitude,
+                currentGeofenceData.latLong.longitude,
+                GeofencingConstants.GEOFENCE_RADIUS_IN_METERS
+            )
+            .setExpirationDuration(GeofencingConstants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
+            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
+            .build()
+
+        val geofencingRequest = GeofencingRequest.Builder()
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+            .addGeofence(geofence)
+            .build()
+
+        geofencingClient.removeGeofences(geofencePendingIntent)?.run {
+            addOnCompleteListener {
+                geofencingClient.addGeofences(geofencingRequest, geofencePendingIntent)?.run {
+                    addOnSuccessListener {
+                        Toast.makeText(
+                            this@MainActivity, R.string.geofences_added,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        Log.e("Add Geofence", geofence.requestId)
+                        viewModel.geofenceActivated()
+                    }
+                    addOnFailureListener {
+                        Toast.makeText(
+                            this@MainActivity, R.string.geofences_not_added,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        if ((it.message != null)) {
+                            Log.w(TAG, it.message!!)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -199,11 +258,6 @@ class MainActivity : AppCompatActivity() {
      * permission.
      */
     private fun removeGeofences() {
-    }
-
-    companion object {
-        internal const val ACTION_GEOFENCE_EVENT =
-            "MainActivity.treasurehunt.action.ACTION_GEOFENCE_EVENT"
     }
 
     /**
@@ -250,6 +304,11 @@ class MainActivity : AppCompatActivity() {
                 checkDeviceLocationSettingsAndStartGeofence(false)
             }
         }
+
+    companion object {
+        internal const val ACTION_GEOFENCE_EVENT =
+            "MainActivity.treasurehunt.action.ACTION_GEOFENCE_EVENT"
+    }
 }
 
 private const val REQUEST_BACKGROUND_PERMISSION_RESULT_CODE = 33
