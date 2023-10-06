@@ -1,16 +1,19 @@
 package com.example.treasurehunt
 
-import android.app.PendingIntent
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.Manifest
 import android.annotation.TargetApi
+import android.app.Activity
+import android.content.Intent
+import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.IntentSender
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
-import android.widget.Toast
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.databinding.DataBindingUtil
@@ -18,14 +21,13 @@ import androidx.lifecycle.SavedStateViewModelFactory
 import androidx.lifecycle.ViewModelProvider
 import com.example.treasurehunt.databinding.ActivityMainBinding
 import com.google.android.gms.common.api.ResolvableApiException
-import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
-import com.google.android.gms.location.GeofencingRequest
+import com.google.android.gms.location.Granularity
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 import com.google.android.material.snackbar.Snackbar
-
 
 class MainActivity : AppCompatActivity() {
 
@@ -75,41 +77,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * In all cases, we need to have the location permission.  On Android 10+ (Q) we need to have
-     * the background permission as well.
-     */
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        Log.d(TAG, "onRequestPermissionResult")
-
-        if (
-            grantResults.isEmpty() ||
-            grantResults[LOCATION_PERMISSION_INDEX] == PackageManager.PERMISSION_DENIED ||
-            (requestCode == REQUEST_FOREGROUND_AND_BACKGROUND_PERMISSION_RESULT_CODE &&
-                    grantResults[BACKGROUND_LOCATION_PERMISSION_INDEX] ==
-                    PackageManager.PERMISSION_DENIED)
-        ) {
-            // Permission denied.
-            Snackbar.make(
-                binding.activityMapsMain,
-                R.string.permission_denied_explanation, Snackbar.LENGTH_INDEFINITE
-            )
-                .setAction(R.string.settings) {
-                    // Displays App settings screen.
-                    startActivity(Intent().apply {
-                        action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                        data = Uri.fromParts("package", BuildConfig.APPLICATION_ID, null)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    })
-                }.show()
-        } else {
-            checkDeviceLocationSettingsAndStartGeofence()
-        }
-    }
-
-    /**
      * This will also destroy any saved state in the associated ViewModel, so we remove the
      * geofences here.
      */
@@ -124,7 +91,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun checkPermissionsAndStartGeofencing() {
         if (viewModel.geofenceIsActive()) return
-        if (foregroundAndBackgroundLocationPermissionApproved()) {
+        if (foregroundLocationPermissionApproved() && backgroundLocationPermissionApproved()) {
             checkDeviceLocationSettingsAndStartGeofence()
         } else {
             requestForegroundAndBackgroundLocationPermissions()
@@ -136,56 +103,86 @@ class MainActivity : AppCompatActivity() {
      *  the opportunity to turn on location services within our app.
      */
     private fun checkDeviceLocationSettingsAndStartGeofence(resolve: Boolean = true) {
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_LOW_POWER, 5000).apply {
+            setMinUpdateDistanceMeters(5.0f)
+            setGranularity(Granularity.GRANULARITY_PERMISSION_LEVEL)
+            setWaitForAccurateLocation(true)
+        }.build()
+        val builder = LocationSettingsRequest.Builder().addLocationRequest(locationRequest)
+        val settingsClient = LocationServices.getSettingsClient(this)
+        val locationSettingsResponseTask = settingsClient.checkLocationSettings(builder.build())
+        locationSettingsResponseTask.addOnFailureListener { exception ->
+            if (exception is ResolvableApiException && resolve) {
+                try {
+                    val request: IntentSenderRequest = IntentSenderRequest.Builder(
+                        exception.resolution.intentSender
+                    ).setFillInIntent(Intent()).setFlags(FLAG_GRANT_READ_URI_PERMISSION, 0).build()
+                    startForResult.launch(request)
+                } catch (sendEx: IntentSender.SendIntentException) {
+                    Log.d(TAG, "Error getting location settings resolution: " + sendEx.message)
+                }
+            } else {
+                Snackbar.make(
+                    binding.activityMain,
+                    R.string.location_required_error,
+                    Snackbar.LENGTH_INDEFINITE
+                ).setAction(android.R.string.ok) {
+                    checkDeviceLocationSettingsAndStartGeofence()
+                }.show()
+            }
+        }
+        locationSettingsResponseTask.addOnCompleteListener {
+            if (it.isSuccessful) {
+                addGeofenceForClue()
+            }
+        }
     }
 
     /**
-     *  Determines whether the app has the appropriate permissions across Android 10+ and all other
-     *  Android versions.
+     *  Determines whether the app has the background location permission across Android 10+
+     *  and all other Android versions.
      */
     @TargetApi(29)
-    private fun foregroundAndBackgroundLocationPermissionApproved(): Boolean {
-        val foregroundLocationApproved = (
-                PackageManager.PERMISSION_GRANTED ==
-                        ActivityCompat.checkSelfPermission(this,
-                            Manifest.permission.ACCESS_FINE_LOCATION))
-        val backgroundPermissionApproved =
-            if (runningQOrLater) {
-                PackageManager.PERMISSION_GRANTED ==
-                        ActivityCompat.checkSelfPermission(
-                            this, Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                        )
-            } else {
-                true
-            }
-        return foregroundLocationApproved && backgroundPermissionApproved
+    private fun backgroundLocationPermissionApproved(): Boolean {
+        if (runningQOrLater) {
+            return PackageManager.PERMISSION_GRANTED == ActivityCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            )
+        }
+        return true
+    }
+
+    /**
+     * Determines whether the app has the foreground location permission
+     */
+    private fun foregroundLocationPermissionApproved(): Boolean {
+        return PackageManager.PERMISSION_GRANTED == ActivityCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        )
     }
 
     /**
      *  Requests ACCESS_FINE_LOCATION and (on Android 10+ (Q) ACCESS_BACKGROUND_LOCATION.
+     *  Starting API level 30, foreground and background permissions should be asked separately
      */
     @TargetApi(29)
     private fun requestForegroundAndBackgroundLocationPermissions() {
-        if (foregroundAndBackgroundLocationPermissionApproved())
-            return
-        // Else request the permission
-        // this provides the result[LOCATION_PERMISSION_INDEX]
-        var permissionsArray = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-
-        val resultCode = when {
-            runningQOrLater -> {
-                // this provides the result[BACKGROUND_LOCATION_PERMISSION_INDEX]
-                permissionsArray += Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                REQUEST_FOREGROUND_AND_BACKGROUND_PERMISSION_RESULT_CODE
-            }
-            else -> REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE
+        if (!foregroundLocationPermissionApproved()) {
+            // request for foreground location permission
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                REQUEST_FOREGROUND_PERMISSIONS_RESULT_CODE
+            )
         }
-
-        Log.d(TAG, "Request foreground only location permission")
-        ActivityCompat.requestPermissions(
-            this,
-            permissionsArray,
-            resultCode
-        )
+        if (!backgroundLocationPermissionApproved()) {
+            // request for background location permission separately
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                REQUEST_BACKGROUND_PERMISSION_RESULT_CODE
+            )
+        }
     }
 
     /**
@@ -210,23 +207,51 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * In all cases, we need to have the location permission.  On Android 10+ (Q) we need to have
+     * the background permission as well.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        Log.d(TAG, "onRequestPermissionResult")
+        if (
+            grantResults.isEmpty() ||
+            grantResults[0] == PackageManager.PERMISSION_DENIED
+        ) {
+            // Permission denied.
+            Snackbar.make(
+                binding.activityMain,
+                R.string.permission_denied_explanation, Snackbar.LENGTH_INDEFINITE
+            )
+                .setAction(R.string.settings) {
+                    // Displays App settings screen.
+                    startActivity(Intent().apply {
+                        action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        data = Uri.fromParts("package", BuildConfig.APPLICATION_ID, null)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    })
+                }.show()
+        } else {
+            // Check again so that both foreground and background location permission are given
+            checkPermissionsAndStartGeofencing()
+        }
+    }
+
+    /**
      *  When we get the result from asking the user to turn on device location, we call
      *  checkDeviceLocationSettingsAndStartGeofence again to make sure it's actually on, but
      *  we don't resolve the check to keep the user from seeing an endless loop.
      */
-    val startForResult =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+    private val startForResult =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result: ActivityResult ->
             if (result.resultCode == Activity.RESULT_OK) {
-                val intent = result.data
-                // Handle the Intent
-                //do stuff here
+                // We don't rely on the result code, but just check the location setting again
+                checkDeviceLocationSettingsAndStartGeofence(false)
             }
         }
 }
 
-private const val REQUEST_FOREGROUND_AND_BACKGROUND_PERMISSION_RESULT_CODE = 33
-private const val REQUEST_FOREGROUND_ONLY_PERMISSIONS_REQUEST_CODE = 34
-private const val REQUEST_TURN_DEVICE_LOCATION_ON = 29
+private const val REQUEST_BACKGROUND_PERMISSION_RESULT_CODE = 33
+private const val REQUEST_FOREGROUND_PERMISSIONS_RESULT_CODE = 34
 private const val TAG = "MainActivity"
-private const val LOCATION_PERMISSION_INDEX = 0
-private const val BACKGROUND_LOCATION_PERMISSION_INDEX = 1

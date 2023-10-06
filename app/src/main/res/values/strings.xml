@@ -7,7 +7,7 @@
     </string>
 
     <string name="permission_denied_explanation">
-        You need to grant location permission in order to play this game.
+        You need to grant location permission to play this game.
     </string>
     <string name="settings">Settings</string>
     <string name="location_setting_off">Please turn on device location in Settings and try again.

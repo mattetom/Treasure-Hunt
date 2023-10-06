@@ -11,14 +11,13 @@
     </data>
 
     <androidx.constraintlayout.widget.ConstraintLayout
-
-        android:id="@+id/activity_maps_main"
+        android:id="@+id/activity_main"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:keepScreenOn="true"
         android:layout_marginTop="@dimen/vertical_margin"
         android:layout_marginBottom="@dimen/vertical_margin"
-        tools:context="com.example.android.treasureHunt.MapsMainActivity">
+        tools:context="com.example.treasurehunt.MainActivity">
 
         <TextView
             android:id="@+id/hintTextView"
