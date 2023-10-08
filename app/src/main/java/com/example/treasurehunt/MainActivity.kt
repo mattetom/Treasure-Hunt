@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
     private val geofencePendingIntent: PendingIntent by lazy {
         val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
         intent.action = ACTION_GEOFENCE_EVENT
-        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_MUTABLE)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,14 +61,13 @@ class MainActivity : AppCompatActivity() {
         binding.lifecycleOwner = this
         geofencingClient = LocationServices.getGeofencingClient(this)
         // Create channel for notifications
-//        createChannel(this)
+        createChannel(this)
     }
 
     override fun onStart() {
         super.onStart()
         checkPermissionsAndStartGeofencing()
     }
-
 
     /**
      *  When the user clicks on the notification, this method will be called, letting us know that
@@ -258,6 +257,21 @@ class MainActivity : AppCompatActivity() {
      * permission.
      */
     private fun removeGeofences() {
+        if (!foregroundLocationPermissionApproved() || !backgroundLocationPermissionApproved()) {
+            return
+        }
+        geofencingClient.removeGeofences(geofencePendingIntent)?.run {
+            addOnSuccessListener {
+                // Geofences removed
+                Log.d(TAG, getString(R.string.geofences_removed))
+                Toast.makeText(applicationContext, R.string.geofences_removed, Toast.LENGTH_SHORT)
+                    .show()
+            }
+            addOnFailureListener {
+                // Failed to remove geofences
+                Log.d(TAG, getString(R.string.geofences_not_removed))
+            }
+        }
     }
 
     /**
