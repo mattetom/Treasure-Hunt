@@ -51,7 +51,6 @@ fun NotificationManager.sendGeofenceEnteredNotification(context: Context, foundI
     )
     val bigPictureStyle = NotificationCompat.BigPictureStyle()
         .bigPicture(mapImage)
-        .bigLargeIcon(null)
 
     val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setContentTitle(context.getString(R.string.app_name))
@@ -65,6 +64,40 @@ fun NotificationManager.sendGeofenceEnteredNotification(context: Context, foundI
         .setContentIntent(contentPendingIntent)
         .setStyle(bigPictureStyle)
         .setLargeIcon(mapImage)
+        .setSmallIcon(R.drawable.android_map)
+
+    notify(NOTIFICATION_ID, builder.build())
+}
+
+fun NotificationManager.sendGeofenceExitedNotification(context: Context, foundIndex: Int) {
+    val contentIntent = Intent(context, MainActivity::class.java)
+    contentIntent.putExtra(GeofencingConstants.EXTRA_GEOFENCE_INDEX, foundIndex)
+    val contentPendingIntent = PendingIntent.getActivity(
+        context,
+        NOTIFICATION_ID,
+        contentIntent,
+        PendingIntent.FLAG_MUTABLE
+    )
+    val mapImage = BitmapFactory.decodeResource(
+        context.resources,
+        R.drawable.android_map
+    )
+    val bigPictureStyle = NotificationCompat.BigPictureStyle()
+        .bigPicture(mapImage)
+
+    val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+        .setContentTitle(context.getString(R.string.app_name))
+        .setContentText(
+            context.getString(
+                R.string.content_exit_text,
+                context.getString(GeofencingConstants.LANDMARK_DATA[foundIndex].name)
+            )
+        )
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setContentIntent(contentPendingIntent)
+        .setStyle(bigPictureStyle)
+        .setLargeIcon(mapImage)
+        .setSmallIcon(R.drawable.android_map)
 
     notify(NOTIFICATION_ID, builder.build())
 }

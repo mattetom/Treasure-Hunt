@@ -33,11 +33,17 @@ internal object GeofencingConstants {
 
     /**
      * Used to set an expiration time for a geofence. After this amount of time, Location services
-     * stops tracking the geofence. For this sample, geofences expire after one hour.
+     * stops tracking the geofence. For this sample, geofences expire after 30 days.
      */
-    val GEOFENCE_EXPIRATION_IN_MILLISECONDS: Long = TimeUnit.HOURS.toMillis(1)
+    val GEOFENCE_EXPIRATION_IN_MILLISECONDS: Long = TimeUnit.DAYS.toMillis(30)
 
     val LANDMARK_DATA = arrayOf(
+        LandmarkDataObject(
+            "home",
+            R.string.home_hint,
+            R.string.home_location,
+            LatLng(45.6751, 8.9528)),
+
         LandmarkDataObject(
             "golden_gate_bridge",
             R.string.golden_gate_bridge_hint,

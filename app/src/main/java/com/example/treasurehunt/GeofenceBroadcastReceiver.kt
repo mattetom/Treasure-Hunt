@@ -23,7 +23,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             return
         }
 
-        if (geofencingEvent.geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) {
+        //if (geofencingEvent.geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) {
             Log.v(TAG, context.getString(R.string.geofence_entered))
             val fenceId = when {
                 geofencingEvent.triggeringGeofences?.isNotEmpty() == true ->
@@ -47,9 +47,15 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 NotificationManager::class.java
             ) as NotificationManager
 
-            notificationManager.sendGeofenceEnteredNotification(
-                context, foundIndex
-            )
-        }
+            if (geofencingEvent.geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) {
+                notificationManager.sendGeofenceEnteredNotification(
+                    context, foundIndex
+                )
+            } else {
+                notificationManager.sendGeofenceExitedNotification(
+                    context, foundIndex
+                )
+            }
+        //}
     }
 }
