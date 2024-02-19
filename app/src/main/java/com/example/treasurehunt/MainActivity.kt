@@ -205,28 +205,31 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     private fun addGeofenceForClue() {
         if (viewModel.geofenceIsActive()) return
-        val currentGeofenceIndex = viewModel.nextGeofenceIndex()
-        if (currentGeofenceIndex >= GeofencingConstants.NUM_LANDMARKS) {
-            removeGeofences()
-            viewModel.geofenceActivated()
-            return
-        }
-        val currentGeofenceData = GeofencingConstants.LANDMARK_DATA[currentGeofenceIndex]
+//        val currentGeofenceIndex = viewModel.nextGeofenceIndex()
+//        if (currentGeofenceIndex >= GeofencingConstants.NUM_LANDMARKS) {
+//            removeGeofences()
+//            viewModel.geofenceActivated()
+//            return
+//        }
+        val geofenceList = ArrayList<Geofence>()
+        for (currentGeofenceData in GeofencingConstants.LANDMARK_DATA) {
+            //val currentGeofenceData = GeofencingConstants.LANDMARK_DATA[currentGeofenceIndex]
 
-        val geofence = Geofence.Builder()
-            .setRequestId(currentGeofenceData.id)
-            .setCircularRegion(
-                currentGeofenceData.latLong.latitude,
-                currentGeofenceData.latLong.longitude,
-                GeofencingConstants.GEOFENCE_RADIUS_IN_METERS
+            geofenceList.add(Geofence.Builder()
+                .setRequestId(currentGeofenceData.id)
+                .setCircularRegion(
+                    currentGeofenceData.latLong.latitude,
+                    currentGeofenceData.latLong.longitude,
+                    GeofencingConstants.GEOFENCE_RADIUS_IN_METERS
+                )
+                .setExpirationDuration(GeofencingConstants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build()
             )
-            .setExpirationDuration(GeofencingConstants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
-
+        }
         val geofencingRequest = GeofencingRequest.Builder()
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER or GeofencingRequest.INITIAL_TRIGGER_EXIT)
-            .addGeofence(geofence)
+            .addGeofences(geofenceList)
             .build()
 
         geofencingClient.removeGeofences(geofencePendingIntent)?.run {
@@ -237,7 +240,7 @@ class MainActivity : AppCompatActivity() {
                             this@MainActivity, R.string.geofences_added,
                             Toast.LENGTH_SHORT
                         ).show()
-                        Log.e("Add Geofence", geofence.requestId)
+                        Log.e("Add Geofence", "All geofences list")
                         viewModel.geofenceActivated()
                     }
                     addOnFailureListener {
@@ -298,7 +301,7 @@ class MainActivity : AppCompatActivity() {
                     // Displays App settings screen.
                     startActivity(Intent().apply {
                         action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                        data = Uri.fromParts("package", BuildConfig.APPLICATION_ID, null)
+                        data = Uri.fromParts("package", applicationContext.packageName, null)
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     })
                 }.show()
